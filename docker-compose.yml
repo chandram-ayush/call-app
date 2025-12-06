@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  kcity-app:
+    container_name: kcity_video_server
+    build: .
+    ports:
+      - "9005:9005"
+    restart: always
+    # Optimized logging to prevent filling up server disk
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
