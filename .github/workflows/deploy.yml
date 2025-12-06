@@ -1,0 +1,23 @@
+name: Deploy K-City Video
+
+on:
+  push:
+    branches: [ "main" ]  # Or "master", depending on your repo
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # This targets your friend's server runner
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Stop Old Container
+        # We ignore errors (|| true) in case the container doesn't exist yet
+        run: docker-compose down || true
+
+      - name: Build and Start New Container
+        run: docker-compose up -d --build
+
+      - name: Clean up unused Docker images
+        # Removes old build images to save space on your friend's server
+        run: docker image prune -f
