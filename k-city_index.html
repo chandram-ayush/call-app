@@ -189,18 +189,33 @@
                 if (state === 'failed') updateState("Connection Failed (Firewall)");
                 if (state === 'disconnected') updateState("Disconnected");
             };
+// ... inside socket.on('offer' ...
 
-            viewerPeer.ontrack = e => {
-                const vid = document.getElementById('remoteVideo');
+        viewerPeer.ontrack = e => {
+            const vid = document.getElementById('remoteVideo');
+            
+            // FIX: Only set the stream if it's new. 
+            // WebRTC fires this twice (audio+video), causing the "AbortError" if we don't check.
+            if (vid.srcObject !== e.streams[0]) {
                 vid.srcObject = e.streams[0];
+                console.log("Stream assigned to video element");
+                
+                // Attempt to play
                 vid.play().then(() => {
                     updateState("Connected");
                 }).catch(error => {
                     console.log("Autoplay blocked:", error);
-                    document.getElementById('play-overlay').classList.remove('hidden');
-                    updateState("Click Play Button");
+                    // If error is "Aborted", it means we loaded too fast, which is fine.
+                    // If error is "NotAllowed", show the play button.
+                    if (error.name !== 'AbortError') {
+                        document.getElementById('play-overlay').classList.remove('hidden');
+                        updateState("Click Play Button");
+                    }
                 });
-            };
+            }
+        };
+
+        // ... rest of code
             viewerPeer.onicecandidate = e => { if(e.candidate) socket.emit('candidate', id, e.candidate); };
             await viewerPeer.setRemoteDescription(desc);
             const answer = await viewerPeer.createAnswer();
