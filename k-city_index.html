@@ -3,23 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>K-City Multi-View</title>
+    <title>K-City Pro</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #00f2ff; --danger: #ff0055; --bg: #0a0a0a; --glass: rgba(255, 255, 255, 0.05); }
-        body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; margin: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        :root { --primary: #00f2ff; --danger: #ff0055; --bg: #0a0a0a; --glass: rgba(255, 255, 255, 0.1); }
+        body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; margin: 0; height: 100dvh; /* dvh fixes mobile scroll issue */ overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         
         /* UI Elements */
         h1 { font-weight: 800; letter-spacing: -1px; margin-bottom: 5px; font-size: 2rem; background: linear-gradient(to right, #fff, #888); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .btn-grid { display: grid; gap: 15px; width: 90%; max-width: 320px; margin-top: 30px; }
+        
         .btn { border: none; padding: 18px; border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: 0.2s; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; justify-content: center; gap: 10px; }
         .btn:active { transform: scale(0.96); }
-        .btn-cam { background: var(--glass); color: var(--primary); border: 1px solid rgba(0, 242, 255, 0.3); }
-        .btn-watch { background: var(--glass); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); }
-        .btn-end { background: var(--danger); color: white; margin-top: 20px; padding: 10px 30px; border-radius: 30px; }
+        .btn-cam { background: rgba(0, 242, 255, 0.1); color: var(--primary); border: 1px solid rgba(0, 242, 255, 0.3); }
+        .btn-watch { background: rgba(255, 255, 255, 0.1); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); }
+        
+        /* Floating Bottom Button (Fixed Mobile UI) */
+        .floating-controls {
+            position: fixed; 
+            bottom: 30px; 
+            left: 0; 
+            width: 100%; 
+            display: flex; 
+            justify-content: center;
+            z-index: 200;
+            pointer-events: none; /* Let clicks pass through empty space */
+        }
+        .btn-end { 
+            background: var(--danger); color: white; 
+            padding: 12px 30px; border-radius: 30px; 
+            box-shadow: 0 5px 20px rgba(255, 0, 85, 0.4);
+            pointer-events: auto; /* Re-enable clicks on button */
+        }
 
-        /* Viewer Count Badge */
+        /* Play Button Overlay (Fixes Laptop Autoplay) */
+        #play-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); z-index: 150;
+            display: flex; align-items: center; justify-content: center; flex-direction: column;
+        }
+
+        /* Video Area */
+        .vid-container { position: relative; width: 100%; height: 100%; background: #000; }
+        /* 'contain' ensures whole video fits on screen */
+        video { width: 100%; height: 100%; object-fit: contain; background: black; }
+        
+        /* Live Badge */
         .live-badge { 
             position: absolute; top: 20px; left: 20px; z-index: 100;
             background: rgba(255, 0, 0, 0.8); color: white; 
@@ -29,13 +59,9 @@
         .live-dot { width: 8px; height: 8px; background: white; border-radius: 50%; animation: blink 1s infinite; }
         @keyframes blink { 50% { opacity: 0.5; } }
 
-        /* Video Area */
-        .vid-container { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; background: #000; }
-        video { width: 100%; height: 100%; object-fit: cover; }
-        
         /* Stealth Overlay */
         #stealth { position: fixed; inset: 0; background: #000; z-index: 999; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-        #stealth span { color: #333; font-size: 10px; animation: fadeOut 4s forwards; }
+        #stealth span { color: #333; font-size: 1rem; animation: fadeOut 4s forwards; }
         @keyframes fadeOut { to { opacity: 0; } }
 
         .hidden { display: none !important; }
@@ -68,7 +94,12 @@
         </div>
         
         <video id="remoteVideo" autoplay playsinline></video>
-        <div style="position: absolute; bottom: 30px; width: 100%; display: flex; justify-content: center;">
+
+        <div id="play-overlay" class="hidden">
+            <button class="btn btn-watch" onclick="forcePlay()">▶ Click to Play Video</button>
+        </div>
+
+        <div class="floating-controls">
             <button class="btn btn-end" onclick="endCall()">Leave Stream</button>
         </div>
     </div>
@@ -88,8 +119,6 @@
         
         let localStream = null;
         let wakeLock = null;
-        
-        // Broadcaster manages MULTIPLE connections: { 'socketId': RTCPeerConnection }
         const peerConnections = {}; 
 
         // --- COMMON LOGIC ---
@@ -114,58 +143,33 @@
         }
 
         socket.on('watcher', async (id) => {
-            // 1. START CAMERA (If not already running)
             if (!localStream) {
                 try {
                     localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
                     document.getElementById('localVideo').srcObject = localStream;
-                    document.getElementById('stealth').classList.remove('hidden'); // Enter Stealth
+                    document.getElementById('stealth').classList.remove('hidden'); 
                 } catch(e) { 
                     alert("Cam Start Failed: " + e.message); 
                     return; 
                 }
             }
 
-            // 2. CREATE PEER CONNECTION FOR *THIS* VIEWER
             const peer = new RTCPeerConnection(config);
-            peerConnections[id] = peer; // Store it using Viewer ID
-
+            peerConnections[id] = peer;
             localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
-
             peer.onicecandidate = e => { if(e.candidate) socket.emit('candidate', id, e.candidate); };
-            
             const offer = await peer.createOffer();
             await peer.setLocalDescription(offer);
             socket.emit('offer', id, peer.localDescription);
         });
 
-        socket.on('answer', (id, desc) => {
-            if(peerConnections[id]) peerConnections[id].setRemoteDescription(desc);
-        });
-
-        socket.on('candidate', (id, cand) => {
-            if(peerConnections[id]) peerConnections[id].addIceCandidate(new RTCIceCandidate(cand));
-        });
+        socket.on('answer', (id, desc) => { if(peerConnections[id]) peerConnections[id].setRemoteDescription(desc); });
+        socket.on('candidate', (id, cand) => { if(peerConnections[id]) peerConnections[id].addIceCandidate(new RTCIceCandidate(cand)); });
         
-        // HANDLE VIEWER DISCONNECT
         socket.on('disconnectPeer', (id) => {
-            // Close specific connection
-            if(peerConnections[id]) {
-                peerConnections[id].close();
-                delete peerConnections[id];
-            }
-
-            // CHECK: Are there any viewers left?
+            if(peerConnections[id]) { peerConnections[id].close(); delete peerConnections[id]; }
             if (Object.keys(peerConnections).length === 0) {
-                console.log("No viewers left. Stopping Camera.");
-                
-                // Stop Camera Hardware
-                if(localStream) { 
-                    localStream.getTracks().forEach(t => t.stop()); 
-                    localStream = null; 
-                }
-                
-                // Exit Stealth, go back to Standby
+                if(localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
                 document.getElementById('stealth').classList.add('hidden');
             }
         });
@@ -183,24 +187,31 @@
 
         socket.on('offer', async (id, desc) => {
             viewerPeer = new RTCPeerConnection(config);
-            viewerPeer.ontrack = e => document.getElementById('remoteVideo').srcObject = e.streams[0];
+            viewerPeer.ontrack = e => {
+                const vid = document.getElementById('remoteVideo');
+                vid.srcObject = e.streams[0];
+                // LAPTOP FIX: Try to play. If fails, show button.
+                vid.play().catch(error => {
+                    console.log("Autoplay blocked:", error);
+                    document.getElementById('play-overlay').classList.remove('hidden');
+                });
+            };
             viewerPeer.onicecandidate = e => { if(e.candidate) socket.emit('candidate', id, e.candidate); };
-            
             await viewerPeer.setRemoteDescription(desc);
             const answer = await viewerPeer.createAnswer();
             await viewerPeer.setLocalDescription(answer);
             socket.emit('answer', id, viewerPeer.localDescription);
         });
 
-        socket.on('broadcaster_left', () => {
-            alert("Broadcaster went offline.");
-            location.reload();
-        });
-
-        function endCall() {
-            socket.disconnect();
-            location.reload();
+        // Manual Play for Laptop
+        function forcePlay() {
+            const vid = document.getElementById('remoteVideo');
+            vid.play();
+            document.getElementById('play-overlay').classList.add('hidden');
         }
+
+        socket.on('broadcaster_left', () => { alert("Broadcaster Offline"); location.reload(); });
+        function endCall() { socket.disconnect(); location.reload(); }
     </script>
 </body>
 </html>
