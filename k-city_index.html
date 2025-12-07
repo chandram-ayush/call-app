@@ -8,7 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
         :root { --primary: #00f2ff; --danger: #ff0055; --bg: #0a0a0a; --glass: rgba(255, 255, 255, 0.1); }
-        body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; margin: 0; height: 100dvh; /* dvh fixes mobile scroll issue */ overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; margin: 0; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         
         /* UI Elements */
         h1 { font-weight: 800; letter-spacing: -1px; margin-bottom: 5px; font-size: 2rem; background: linear-gradient(to right, #fff, #888); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
@@ -19,43 +19,27 @@
         .btn-cam { background: rgba(0, 242, 255, 0.1); color: var(--primary); border: 1px solid rgba(0, 242, 255, 0.3); }
         .btn-watch { background: rgba(255, 255, 255, 0.1); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); }
         
-        /* Floating Bottom Button (Fixed Mobile UI) */
-        .floating-controls {
-            position: fixed; 
-            bottom: 30px; 
-            left: 0; 
-            width: 100%; 
-            display: flex; 
-            justify-content: center;
-            z-index: 200;
-            pointer-events: none; /* Let clicks pass through empty space */
-        }
-        .btn-end { 
-            background: var(--danger); color: white; 
-            padding: 12px 30px; border-radius: 30px; 
-            box-shadow: 0 5px 20px rgba(255, 0, 85, 0.4);
-            pointer-events: auto; /* Re-enable clicks on button */
-        }
+        /* Floating Bottom Button */
+        .floating-controls { position: fixed; bottom: 30px; left: 0; width: 100%; display: flex; justify-content: center; z-index: 200; pointer-events: none; }
+        .btn-end { background: var(--danger); color: white; padding: 12px 30px; border-radius: 30px; box-shadow: 0 5px 20px rgba(255, 0, 85, 0.4); pointer-events: auto; }
 
-        /* Play Button Overlay (Fixes Laptop Autoplay) */
-        #play-overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.7); z-index: 150;
-            display: flex; align-items: center; justify-content: center; flex-direction: column;
+        /* Play Button Overlay */
+        #play-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 150; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+
+        /* Connection Status Overlay */
+        #status-overlay { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+            background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px;
+            text-align: center; z-index: 140; backdrop-filter: blur(5px);
         }
+        .status-text { color: #00f2ff; font-family: monospace; font-size: 1.2rem; }
 
         /* Video Area */
         .vid-container { position: relative; width: 100%; height: 100%; background: #000; }
-        /* 'contain' ensures whole video fits on screen */
         video { width: 100%; height: 100%; object-fit: contain; background: black; }
         
         /* Live Badge */
-        .live-badge { 
-            position: absolute; top: 20px; left: 20px; z-index: 100;
-            background: rgba(255, 0, 0, 0.8); color: white; 
-            padding: 5px 12px; border-radius: 4px; font-weight: bold; font-size: 0.8rem;
-            display: flex; align-items: center; gap: 6px;
-        }
+        .live-badge { position: absolute; top: 20px; left: 20px; z-index: 100; background: rgba(255, 0, 0, 0.8); color: white; padding: 5px 12px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
         .live-dot { width: 8px; height: 8px; background: white; border-radius: 50%; animation: blink 1s infinite; }
         @keyframes blink { 50% { opacity: 0.5; } }
 
@@ -73,7 +57,7 @@
 
     <div id="home" class="fade-in">
         <h1>K-CITY LINK</h1>
-        <p>Multi-Viewer Secure System</p>
+        <p>System Ready</p>
         <div class="btn-grid">
             <button class="btn btn-cam" onclick="startBroadcasterMode()"><span>📷</span> I am Camera</button>
             <button class="btn btn-watch" onclick="startViewerMode()"><span>👀</span> I am Viewer</button>
@@ -93,6 +77,11 @@
             <span id="view-count">0</span> Viewers
         </div>
         
+        <div id="status-overlay">
+            <div class="status-text" id="conn-state">Initializing...</div>
+            <div style="font-size: 0.8rem; color: #aaa; margin-top: 5px;">Wait for connection</div>
+        </div>
+
         <video id="remoteVideo" autoplay playsinline></video>
 
         <div id="play-overlay" class="hidden">
@@ -121,25 +110,30 @@
         let wakeLock = null;
         const peerConnections = {}; 
 
+        // Update UI State Helper
+        function updateState(state) {
+            const el = document.getElementById('conn-state');
+            el.innerText = state;
+            if (state === 'Connected') {
+                setTimeout(() => document.getElementById('status-overlay').classList.add('hidden'), 1000);
+            } else {
+                document.getElementById('status-overlay').classList.remove('hidden');
+            }
+        }
+
         // --- COMMON LOGIC ---
         socket.on('update_count', (count) => {
             document.getElementById('view-count').innerText = count;
             document.getElementById('stealth-count').innerText = count;
         });
 
-        // --- BROADCASTER LOGIC ---
+        // --- BROADCASTER ---
         async function startBroadcasterMode() {
             document.getElementById('home').classList.add('hidden');
             document.getElementById('standby').classList.remove('hidden');
-            
             try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
             socket.emit('broadcaster');
-
-            // Permission warmup
-            try { 
-                const t = await navigator.mediaDevices.getUserMedia({video:true});
-                t.getTracks().forEach(tr => tr.stop());
-            } catch(e) { alert("Please Allow Camera Permissions!"); }
+            try { const t = await navigator.mediaDevices.getUserMedia({video:true}); t.getTracks().forEach(tr => tr.stop()); } catch(e) {}
         }
 
         socket.on('watcher', async (id) => {
@@ -148,10 +142,7 @@
                     localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
                     document.getElementById('localVideo').srcObject = localStream;
                     document.getElementById('stealth').classList.remove('hidden'); 
-                } catch(e) { 
-                    alert("Cam Start Failed: " + e.message); 
-                    return; 
-                }
+                } catch(e) { alert("Cam Start Failed: " + e.message); return; }
             }
 
             const peer = new RTCPeerConnection(config);
@@ -176,24 +167,38 @@
 
         function toggleStealth() { document.getElementById('stealth').classList.add('hidden'); }
 
-        // --- VIEWER LOGIC ---
+        // --- VIEWER ---
         let viewerPeer = null;
 
         function startViewerMode() {
             document.getElementById('home').classList.add('hidden');
             document.getElementById('viewer').classList.remove('hidden');
+            updateState("Searching for Camera...");
             socket.emit('watcher');
         }
 
         socket.on('offer', async (id, desc) => {
+            updateState("Negotiating...");
             viewerPeer = new RTCPeerConnection(config);
+            
+            // Connection State Monitoring
+            viewerPeer.onconnectionstatechange = () => {
+                const state = viewerPeer.connectionState;
+                console.log("Connection State:", state);
+                if (state === 'connected') updateState("Connected");
+                if (state === 'failed') updateState("Connection Failed (Firewall)");
+                if (state === 'disconnected') updateState("Disconnected");
+            };
+
             viewerPeer.ontrack = e => {
                 const vid = document.getElementById('remoteVideo');
                 vid.srcObject = e.streams[0];
-                // LAPTOP FIX: Try to play. If fails, show button.
-                vid.play().catch(error => {
+                vid.play().then(() => {
+                    updateState("Connected");
+                }).catch(error => {
                     console.log("Autoplay blocked:", error);
                     document.getElementById('play-overlay').classList.remove('hidden');
+                    updateState("Click Play Button");
                 });
             };
             viewerPeer.onicecandidate = e => { if(e.candidate) socket.emit('candidate', id, e.candidate); };
@@ -203,11 +208,11 @@
             socket.emit('answer', id, viewerPeer.localDescription);
         });
 
-        // Manual Play for Laptop
         function forcePlay() {
             const vid = document.getElementById('remoteVideo');
             vid.play();
             document.getElementById('play-overlay').classList.add('hidden');
+            updateState("Connected");
         }
 
         socket.on('broadcaster_left', () => { alert("Broadcaster Offline"); location.reload(); });
