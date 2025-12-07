@@ -7,11 +7,10 @@ sio = socketio.AsyncServer(async_mode='aiohttp', cors_allowed_origins='*')
 app = web.Application()
 sio.attach(app)
 
-# STATE MANAGEMENT
+# STATE
 broadcaster_sid = None
-watchers = set() # Set to store unique viewer SIDs
+watchers = set()
 
-# --- SERVE HTML ---
 async def index(request):
     filename = 'k-city_index.html'
     if not os.path.exists(filename):
@@ -31,49 +30,47 @@ async def broadcaster(sid):
     global broadcaster_sid
     broadcaster_sid = sid
     print(f"✅ Broadcaster registered: {sid}")
-    # Reset watchers on new broadcast session
-    watchers.clear()
     await sio.emit('broadcaster_ready', skip_sid=sid)
+
+@sio.event
+async def heartbeat(sid):
+    # Keep-alive signal from phone
+    pass 
+
+@sio.event
+async def check_status(sid):
+    # Viewer asks: Is camera online?
+    is_online = broadcaster_sid is not None
+    await sio.emit('status_response', is_online, room=sid)
 
 @sio.event
 async def watcher(sid):
     global broadcaster_sid
     print(f"👀 New Viewer: {sid}")
-    
     if broadcaster_sid:
         watchers.add(sid)
-        # 1. Tell Broadcaster to connect to THIS specific viewer
         await sio.emit('watcher', sid, room=broadcaster_sid)
-        # 2. Update everyone on the count
         await sio.emit('update_count', len(watchers))
     else:
-        print("❌ No broadcaster available")
+        # Tell viewer immediately that camera is offline
+        await sio.emit('status_response', False, room=sid)
 
 @sio.event
 async def disconnect(sid):
     global broadcaster_sid
-    
-    # CASE 1: Broadcaster Disconnects
     if sid == broadcaster_sid:
         print("❌ Broadcaster disconnected")
         broadcaster_sid = None
         watchers.clear()
         await sio.emit('broadcaster_left')
         await sio.emit('update_count', 0)
-
-    # CASE 2: Viewer Disconnects
     elif sid in watchers:
-        print(f"Viewer {sid} left")
         watchers.remove(sid)
-        
-        # Update count for remaining viewers
         await sio.emit('update_count', len(watchers))
-        
-        # Tell Broadcaster to drop this specific connection
         if broadcaster_sid:
              await sio.emit('disconnectPeer', sid, room=broadcaster_sid)
 
-# --- WebRTC Signaling Relay ---
+# --- WebRTC Relay ---
 @sio.event
 async def offer(sid, target_id, message):
     await sio.emit('offer', (sid, message), room=target_id)

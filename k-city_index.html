@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>K-City Pro</title>
+    <title>K-City Stable</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
         :root { --primary: #00f2ff; --danger: #ff0055; --bg: #0a0a0a; --glass: rgba(255, 255, 255, 0.1); }
         body { background: var(--bg); color: #fff; font-family: 'Inter', sans-serif; margin: 0; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         
-        /* UI Elements */
         h1 { font-weight: 800; letter-spacing: -1px; margin-bottom: 5px; font-size: 2rem; background: linear-gradient(to right, #fff, #888); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .btn-grid { display: grid; gap: 15px; width: 90%; max-width: 320px; margin-top: 30px; }
         
@@ -18,12 +17,9 @@
         .btn:active { transform: scale(0.96); }
         .btn-cam { background: rgba(0, 242, 255, 0.1); color: var(--primary); border: 1px solid rgba(0, 242, 255, 0.3); }
         .btn-watch { background: rgba(255, 255, 255, 0.1); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); }
-        
-        .floating-controls { position: fixed; bottom: 30px; left: 0; width: 100%; display: flex; justify-content: center; z-index: 200; pointer-events: none; }
         .btn-end { background: var(--danger); color: white; padding: 12px 30px; border-radius: 30px; box-shadow: 0 5px 20px rgba(255, 0, 85, 0.4); pointer-events: auto; }
 
-        /* Overlays */
-        #play-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 150; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        .floating-controls { position: fixed; bottom: 30px; left: 0; width: 100%; display: flex; justify-content: center; z-index: 200; pointer-events: none; }
         
         #status-overlay { 
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
@@ -34,17 +30,14 @@
         .status-text { color: #00f2ff; font-family: monospace; font-size: 1.1rem; margin-bottom: 5px; }
         .status-sub { color: #aaa; font-size: 0.8rem; }
 
-        /* Video Area */
         .vid-container { position: relative; width: 100%; height: 100%; background: #000; }
         video { width: 100%; height: 100%; object-fit: contain; background: black; }
         
-        .live-badge { position: absolute; top: 20px; left: 20px; z-index: 100; background: rgba(255, 0, 0, 0.8); color: white; padding: 5px 12px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
-        .live-dot { width: 8px; height: 8px; background: white; border-radius: 50%; animation: blink 1s infinite; }
-        @keyframes blink { 50% { opacity: 0.5; } }
-
         #stealth { position: fixed; inset: 0; background: #000; z-index: 999; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-        #stealth span { color: #333; font-size: 1rem; animation: fadeOut 4s forwards; }
-        @keyframes fadeOut { to { opacity: 0; } }
+        
+        /* Pulse Animation for Connection Health */
+        .ping-dot { position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: #00ff00; opacity: 0; transition: opacity 0.2s; }
+        .ping-active { opacity: 1; }
 
         .hidden { display: none !important; }
         .fade-in { animation: fadeIn 0.5s ease; }
@@ -56,6 +49,7 @@
     <div id="home" class="fade-in">
         <h1>K-CITY LINK</h1>
         <p>System Ready</p>
+        <div id="server-indicator" style="font-size: 10px; color: #555; margin-top: 10px;">Connecting...</div>
         <div class="btn-grid">
             <button class="btn btn-cam" onclick="startBroadcasterMode()"><span>📷</span> I am Camera</button>
             <button class="btn btn-watch" onclick="startViewerMode()"><span>👀</span> I am Viewer</button>
@@ -63,64 +57,57 @@
     </div>
 
     <div id="standby" class="hidden fade-in" style="text-align: center;">
+        <div class="ping-dot" id="cam-ping"></div>
         <div style="font-size: 3rem; margin-bottom: 20px;">🛡️</div>
         <h1>SYSTEM ARMED</h1>
         <p>Standby Mode Active</p>
-        <p style="margin-top: 30px; font-size: 0.8rem; opacity: 0.5;">Screen is Awake.<br>Camera OFF until viewer connects.</p>
+        <p id="standby-msg" style="margin-top: 30px; font-size: 0.8rem; opacity: 0.5;">
+            Keep this tab open.<br>Do not minimize.
+        </p>
     </div>
 
     <div id="viewer" class="hidden vid-container">
-        <div class="live-badge"><div class="live-dot"></div><span id="view-count">0</span> Viewers</div>
-        
         <div id="status-overlay">
             <div class="status-text" id="conn-state">Initializing...</div>
             <div class="status-sub" id="conn-hint">Connecting to Server</div>
         </div>
-
         <video id="remoteVideo" autoplay playsinline></video>
-
-        <div id="play-overlay" class="hidden">
-            <button class="btn btn-watch" onclick="forcePlay()">▶ Click to Play Video</button>
+        <div id="play-overlay" class="hidden" style="position:absolute; inset:0; background:rgba(0,0,0,0.8); display:flex; justify-content:center; align-items:center; z-index:150;">
+            <button class="btn btn-watch" onclick="forcePlay()">▶ Play Video</button>
         </div>
-
         <div class="floating-controls">
-            <button class="btn btn-end" onclick="endCall()">Leave Stream</button>
+            <button class="btn btn-end" onclick="endCall()">End Call</button>
         </div>
     </div>
 
     <video id="localVideo" muted playsinline autoplay style="display: none;"></video>
-
-    <div id="stealth" class="hidden" ondblclick="toggleStealth()">
-        <div class="live-badge" style="top: 50%; left: 50%; transform: translate(-50%, -50%); background: none;">
-            <span id="stealth-count" style="color: #333; font-size: 2rem;">0</span>
-        </div>
-        <span style="position: absolute; bottom: 50px;">Recording Active. Double Tap to Wake.</span>
-    </div>
+    <div id="stealth" class="hidden" ondblclick="toggleStealth()"></div>
 
     <script>
-        const socket = io();
-        
-        // FIX: More STUN servers to increase connection success rate
+        const socket = io({
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000
+        });
+
+        // STUN Servers (Google + Open Source)
         const config = { 
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' }
             ] 
         };
         
         let localStream = null;
         let wakeLock = null;
+        let heartbeatInterval = null;
         const peerConnections = {}; 
-        let iceCandidatesQueue = []; // FIX: Buffer for early candidates
+        let iceCandidatesQueue = [];
 
-        // --- UI HELPERS ---
+        // --- GLOBAL HELPERS ---
         function updateState(state, hint="") {
-            const el = document.getElementById('conn-state');
-            const sub = document.getElementById('conn-hint');
-            el.innerText = state;
-            sub.innerText = hint;
-            
+            document.getElementById('conn-state').innerText = state;
+            document.getElementById('conn-hint').innerText = hint;
             if (state === 'Connected') {
                 setTimeout(() => document.getElementById('status-overlay').classList.add('hidden'), 500);
             } else {
@@ -128,9 +115,27 @@
             }
         }
 
-        socket.on('update_count', (count) => {
-            document.getElementById('view-count').innerText = count;
-            document.getElementById('stealth-count').innerText = count;
+        socket.on('connect', () => {
+            document.getElementById('server-indicator').innerText = "● Server Connected";
+            document.getElementById('server-indicator').style.color = "#00ff00";
+            // Start Heartbeat to keep mobile connection alive
+            if(heartbeatInterval) clearInterval(heartbeatInterval);
+            heartbeatInterval = setInterval(() => {
+                socket.emit('heartbeat');
+                // Visual feedback for heartbeat
+                const dot = document.getElementById('cam-ping');
+                dot.classList.add('ping-active');
+                setTimeout(() => dot.classList.remove('ping-active'), 200);
+            }, 2000);
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('server-indicator').innerText = "○ Disconnected (Reconnecting...)";
+            document.getElementById('server-indicator').style.color = "#ff0000";
+            if(document.getElementById('standby').classList.contains('hidden') === false) {
+                document.getElementById('standby-msg').innerText = "⚠️ LOST CONNECTION! RECONNECTING...";
+                document.getElementById('standby-msg').style.color = "red";
+            }
         });
 
         // --- BROADCASTER ---
@@ -138,8 +143,13 @@
             document.getElementById('home').classList.add('hidden');
             document.getElementById('standby').classList.remove('hidden');
             try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
+            
+            // Register immediately
             socket.emit('broadcaster');
-            try { const t = await navigator.mediaDevices.getUserMedia({video:true}); t.getTracks().forEach(tr => tr.stop()); } catch(e) { alert("Enable Camera Permissions!"); }
+
+            // Force permission warmup
+            try { const t = await navigator.mediaDevices.getUserMedia({video:true}); t.getTracks().forEach(tr => tr.stop()); } 
+            catch(e) { alert("Please Allow Camera Permissions!"); }
         }
 
         socket.on('watcher', async (id) => {
@@ -148,14 +158,13 @@
                     localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
                     document.getElementById('localVideo').srcObject = localStream;
                     document.getElementById('stealth').classList.remove('hidden'); 
-                } catch(e) { alert("Cam Failed: " + e.message); return; }
+                } catch(e) { alert("Cam Start Failed: " + e.message); return; }
             }
 
             const peer = new RTCPeerConnection(config);
             peerConnections[id] = peer;
             localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
             peer.onicecandidate = e => { if(e.candidate) socket.emit('candidate', id, e.candidate); };
-            
             const offer = await peer.createOffer();
             await peer.setLocalDescription(offer);
             socket.emit('offer', id, peer.localDescription);
@@ -180,32 +189,41 @@
         function startViewerMode() {
             document.getElementById('home').classList.add('hidden');
             document.getElementById('viewer').classList.remove('hidden');
-            updateState("Waiting...", "Searching for Camera...");
-            socket.emit('watcher');
-
-            // Timeout Warning
-            setTimeout(() => {
-                if(!viewerPeer || viewerPeer.connectionState !== 'connected') {
-                    updateState("Slow Connection", "Check if Camera is online");
-                }
-            }, 8000);
+            updateState("Checking Camera Status...");
+            
+            // Ask server if camera is actually online first
+            socket.emit('check_status');
         }
 
+        socket.on('status_response', (isOnline) => {
+            if (isOnline) {
+                updateState("Requesting Video...");
+                socket.emit('watcher');
+                
+                // Timeout Warning
+                setTimeout(() => {
+                    if(!viewerPeer || viewerPeer.connectionState !== 'connected') {
+                        updateState("Slow Connection", "Phone might be asleep. Wake it up.");
+                    }
+                }, 8000);
+            } else {
+                updateState("Camera Offline", "Please open app on Phone first");
+            }
+        });
+
         socket.on('offer', async (id, desc) => {
-            updateState("Negotiating...", "Found Camera. connecting...");
+            updateState("Negotiating...", "Establishing P2P Link");
             viewerPeer = new RTCPeerConnection(config);
             
-            // FIX: Process buffered candidates
             while (iceCandidatesQueue.length > 0) {
-                const cand = iceCandidatesQueue.shift();
-                viewerPeer.addIceCandidate(new RTCIceCandidate(cand));
+                viewerPeer.addIceCandidate(new RTCIceCandidate(iceCandidatesQueue.shift()));
             }
 
             viewerPeer.onconnectionstatechange = () => {
                 const state = viewerPeer.connectionState;
-                if (state === 'connected') updateState("Connected", "Live Stream Active");
-                if (state === 'failed') updateState("Connection Failed", "Firewall blocking P2P. Use same WiFi.");
-                if (state === 'disconnected') updateState("Disconnected", "Stream ended");
+                if (state === 'connected') updateState("Connected");
+                if (state === 'failed') updateState("Connection Failed", "Try same WiFi");
+                if (state === 'disconnected') updateState("Disconnected");
             };
 
             viewerPeer.ontrack = e => {
@@ -226,7 +244,6 @@
             socket.emit('answer', id, viewerPeer.localDescription);
         });
 
-        // FIX: Candidate Buffering Logic
         socket.on('candidate', (id, cand) => {
             if (viewerPeer && viewerPeer.remoteDescription) {
                 viewerPeer.addIceCandidate(new RTCIceCandidate(cand));
@@ -241,7 +258,7 @@
             updateState("Connected");
         }
 
-        socket.on('broadcaster_left', () => { alert("Broadcaster Offline"); location.reload(); });
+        socket.on('broadcaster_left', () => { alert("Camera went offline"); location.reload(); });
         function endCall() { socket.disconnect(); location.reload(); }
     </script>
 </body>
