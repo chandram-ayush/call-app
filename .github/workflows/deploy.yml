@@ -2,7 +2,7 @@ name: Deploy K-City Video
 
 on:
   push:
-    branches: [ "main" ]  # Or "master", depending on your repo
+    branches: [ "master" ]  # Or "master", depending on your repo
 
 jobs:
   deploy:
