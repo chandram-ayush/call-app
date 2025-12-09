@@ -2,18 +2,11 @@ from aiohttp import web
 import socketio
 import os
 
-# Increased timeouts to prevent accidental disconnects on mobile
-sio = socketio.AsyncServer(
-    async_mode='aiohttp',
-    cors_allowed_origins='*',
-    ping_timeout=60,
-    ping_interval=25
-)
-
+sio = socketio.AsyncServer(async_mode='aiohttp', cors_allowed_origins='*', ping_timeout=60)
 app = web.Application()
 sio.attach(app)
 
-# { 'sid': { 'name': 'MyCam', 'viewers': set() } }
+# State: { 'sid': { 'name': 'CamName', 'viewers': set() } }
 broadcasters = {} 
 
 async def index(request):
@@ -24,24 +17,33 @@ async def index(request):
 
 app.router.add_get('/', index)
 
-# --- Events ---
-
+# --- Helpers ---
 async def broadcast_list():
-    """Send updated list to everyone immediately"""
-    camera_list = []
-    for sid, data in broadcasters.items():
-        camera_list.append({'id': sid, 'name': data['name'], 'viewers': len(data['viewers'])})
-    await sio.emit('camera_list_update', camera_list)
+    """Update camera list for everyone"""
+    data = [{'id': k, 'name': v['name'], 'viewers': len(v['viewers'])} for k, v in broadcasters.items()]
+    await sio.emit('camera_list_update', data)
 
+# --- Events ---
 @sio.event
 async def connect(sid, environ):
     print(f"🔌 Connected: {sid}")
 
 @sio.event
 async def register_broadcaster(sid, name):
-    print(f"✅ Camera Registered: {name}")
     broadcasters[sid] = {'name': name, 'viewers': set()}
-    await broadcast_list() 
+    print(f"✅ Camera Started: {name}")
+    await broadcast_list()
+
+@sio.event
+async def stop_broadcast(sid):
+    """Broadcaster manually stops stream"""
+    if sid in broadcasters:
+        print(f"🛑 Camera Stopped: {broadcasters[sid]['name']}")
+        # Notify all viewers to leave
+        for viewer in broadcasters[sid]['viewers']:
+            await sio.emit('broadcaster_left', room=viewer)
+        del broadcasters[sid]
+        await broadcast_list()
 
 @sio.event
 async def get_cameras(sid):
@@ -51,44 +53,37 @@ async def get_cameras(sid):
 async def join_stream(sid, target_id):
     if target_id in broadcasters:
         broadcasters[target_id]['viewers'].add(sid)
-        print(f"🔗 Connecting {sid} -> {target_id}")
-        # Tell Camera to call this Viewer
         await sio.emit('watcher_joined', sid, room=target_id)
         await broadcast_list()
     else:
-        # Crucial: Tell viewer this camera is dead (Ghost ID)
-        await sio.emit('error', "Camera unavailable (refreshing list...)", room=sid)
-        await broadcast_list()
+        await sio.emit('error', "Camera not found", room=sid)
+
+@sio.event
+async def leave_stream(sid):
+    """Viewer manually leaves"""
+    # Find which camera this viewer was watching
+    for cam_id, data in broadcasters.items():
+        if sid in data['viewers']:
+            data['viewers'].remove(sid)
+            await sio.emit('viewer_left', sid, room=cam_id)
+            await broadcast_list()
+            break
 
 @sio.event
 async def disconnect(sid):
+    # Handle unexpected disconnects (internet loss, closed tab)
     if sid in broadcasters:
-        # Camera disconnects
-        print(f"❌ Camera {broadcasters[sid]['name']} left")
-        del broadcasters[sid]
-        await broadcast_list()
+        await stop_broadcast(sid)
     else:
-        # Viewer disconnects
-        for cam_id, data in broadcasters.items():
-            if sid in data['viewers']:
-                data['viewers'].remove(sid)
-                await sio.emit('viewer_left', sid, room=cam_id)
-                if len(data['viewers']) == 0:
-                    await sio.emit('stop_broadcasting', room=cam_id)
-                await broadcast_list()
+        await leave_stream(sid)
 
-# --- WebRTC Pass-through ---
+# --- WebRTC Signaling ---
 @sio.event
-async def offer(sid, target_id, msg):
-    await sio.emit('offer', (sid, msg), room=target_id)
-
+async def offer(sid, target, msg): await sio.emit('offer', (sid, msg), room=target)
 @sio.event
-async def answer(sid, target_id, msg):
-    await sio.emit('answer', (sid, msg), room=target_id)
-
+async def answer(sid, target, msg): await sio.emit('answer', (sid, msg), room=target)
 @sio.event
-async def candidate(sid, target_id, msg):
-    await sio.emit('candidate', (sid, msg), room=target_id)
+async def candidate(sid, target, msg): await sio.emit('candidate', (sid, msg), room=target)
 
 if __name__ == '__main__':
     web.run_app(app, host='0.0.0.0', port=9005)

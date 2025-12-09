@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>K-City Link</title>
+    <title>K-City Stream</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         body { background: #000; color: #fff; font-family: sans-serif; text-align: center; margin: 0; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
-        .vid-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; }
+        .vid-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; width: 100%; height: 100%; }
         video { width: 100%; height: 100%; object-fit: cover; }
         
-        .btn { padding: 15px 30px; border-radius: 30px; border: none; font-weight: bold; font-size: 16px; margin: 10px; cursor: pointer; width: 80%; max-width: 300px; }
+        .btn { padding: 15px 30px; border-radius: 30px; border: none; font-weight: bold; font-size: 16px; margin: 10px; cursor: pointer; width: 80%; max-width: 300px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         .btn-cam { background: #e91e63; color: white; }
         .btn-watch { background: #2196f3; color: white; }
-        .btn-back { background: #444; color: white; margin-top: 20px;}
+        .btn-close { background: #d32f2f; color: white; position: absolute; bottom: 30px; z-index: 100; }
         
         input { padding: 15px; border-radius: 30px; border: 1px solid #444; background: #222; color: white; width: 70%; text-align: center; margin-bottom: 20px; font-size: 16px;}
         
@@ -21,34 +21,34 @@
         .cam-row { background: #222; margin: 10px auto; padding: 15px; border-radius: 10px; width: 90%; max-width: 400px; display: flex; justify-content: space-between; cursor: pointer; border: 1px solid #333;}
         .hidden { display: none !important; }
         
-        /* Debug Console */
-        #console { position: fixed; bottom: 0; left: 0; width: 100%; height: 80px; background: rgba(0,0,0,0.8); font-size: 10px; text-align: left; overflow-y: scroll; pointer-events: none; color: #0f0; z-index: 999;}
+        /* Floating controls */
+        .controls { position: absolute; bottom: 20px; left: 0; width: 100%; display: flex; justify-content: center; z-index: 10; }
     </style>
 </head>
 <body>
 
     <div id="screen-select" class="vid-wrapper" style="flex-direction: column;">
-        <h1>K-CITY LINK</h1>
+        <h1 style="letter-spacing: 2px;">K-CITY LINK</h1>
         <input type="text" id="camName" placeholder="Camera Name (Optional)">
-        <button class="btn btn-cam" onclick="startBroadcaster()">Start Camera 📷</button>
-        <button class="btn btn-watch" onclick="startViewerLobby()">Watch Stream 👀</button>
+        <button class="btn btn-cam" onclick="initBroadcaster()">Start Camera 📷</button>
+        <button class="btn btn-watch" onclick="initViewer()">Watch Stream 👀</button>
     </div>
 
     <div id="screen-lobby" class="hidden vid-wrapper" style="flex-direction: column; justify-content: flex-start; padding-top: 50px;">
         <h3>Select Camera</h3>
         <div id="cam-list">Searching...</div>
-        <button class="btn btn-back" onclick="location.reload()">Back</button>
+        <button class="btn btn-close" onclick="goHome()">Back</button>
     </div>
 
     <div id="screen-video" class="hidden vid-wrapper">
         <video id="vid" playsinline autoplay muted></video>
-        <button class="btn btn-back" style="position: absolute; bottom: 30px;" onclick="location.reload()">Stop / Leave</button>
+        <div class="controls">
+            <button id="btn-stop-cam" class="btn btn-close hidden" onclick="stopCamera()">🛑 Close Stream</button>
+            <button id="btn-leave-stream" class="btn btn-close hidden" onclick="leaveStream()">👋 Leave Stream</button>
+        </div>
     </div>
 
-    <div id="console"></div>
-
     <script>
-        // 1. ROBUST CONFIGURATION (This works best for cross-network)
         const config = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -61,125 +61,134 @@
         const socket = io();
         let pc = null;
         let localStream = null;
+        let currentRole = null; // 'broadcaster' or 'viewer'
 
-        function log(msg) {
-            document.getElementById('console').innerHTML += `<div>${msg}</div>`;
-            document.getElementById('console').scrollTop = 9999;
+        // --- NAVIGATION HELPERS ---
+        function showScreen(id) {
+            ['screen-select', 'screen-lobby', 'screen-video'].forEach(s => document.getElementById(s).classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
         }
 
-        // --- BROADCASTER ---
-        async function startBroadcaster() {
-            const name = document.getElementById('camName').value || "Unnamed Cam";
-            
-            // UI
-            document.getElementById('screen-select').classList.add('hidden');
-            document.getElementById('screen-video').classList.remove('hidden');
-            
-            // Wake Lock
-            try { await navigator.wakeLock.request('screen'); } catch(e){}
+        function goHome() {
+            // Clean up everything before going home
+            if (localStream) stopCamera();
+            if (pc) leaveStream();
+            showScreen('screen-select');
+        }
 
-            // Camera Init
+        // --- BROADCASTER LOGIC ---
+        async function initBroadcaster() {
+            const name = document.getElementById('camName').value || "Unnamed Cam";
+            currentRole = 'broadcaster';
+
             try {
+                // Get Camera
                 localStream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}, audio: true});
                 document.getElementById('vid').srcObject = localStream;
-                document.getElementById('vid').muted = true; // Local video must be muted
-            } catch(e) { alert("Camera failed: " + e); return; }
+                document.getElementById('vid').muted = true; // Mute self
+                
+                // Wake Lock
+                try { await navigator.wakeLock.request('screen'); } catch(e){}
 
-            socket.emit('register_broadcaster', name);
-            log("📡 Broadcasting started...");
+                // UI Updates
+                showScreen('screen-video');
+                document.getElementById('btn-stop-cam').classList.remove('hidden');
+                document.getElementById('btn-leave-stream').classList.add('hidden');
+
+                socket.emit('register_broadcaster', name);
+
+            } catch(e) { alert("Camera Error: " + e); }
         }
 
-        // Incoming watcher
-        socket.on('watcher_joined', async (viewerId) => {
-            log(`👤 Viewer ${viewerId} connecting...`);
+        function stopCamera() {
+            // 1. Stop Hardware
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop()); // Turns off light
+                localStream = null;
+            }
+            // 2. Stop Network
+            if (pc) { pc.close(); pc = null; }
             
-            pc = new RTCPeerConnection(config);
+            // 3. Notify Server
+            socket.emit('stop_broadcast');
             
-            // Add tracks
-            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+            // 4. UI
+            showScreen('screen-select');
+        }
 
-            // ICE Handling
-            pc.onicecandidate = e => {
-                if (e.candidate) socket.emit('candidate', viewerId, e.candidate);
-            };
-
-            // Create Offer
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            socket.emit('offer', viewerId, pc.localDescription);
-        });
-
-        // Answer received
-        socket.on('answer', (viewerId, desc) => {
-            if(pc) pc.setRemoteDescription(desc);
-        });
-
-        // ICE Candidate received
-        socket.on('candidate', (viewerId, cand) => {
-            if(pc) pc.addIceCandidate(new RTCIceCandidate(cand));
-        });
-
-        socket.on('stop_broadcasting', () => {
-             log("No viewers. Connection idle.");
-             if(pc) { pc.close(); pc = null; }
-        });
-
-        // --- VIEWER ---
-        function startViewerLobby() {
-            document.getElementById('screen-select').classList.add('hidden');
-            document.getElementById('screen-lobby').classList.remove('hidden');
+        // --- VIEWER LOGIC ---
+        function initViewer() {
+            currentRole = 'viewer';
+            showScreen('screen-lobby');
             socket.emit('get_cameras');
         }
 
+        async function connectToCamera(camId) {
+            showScreen('screen-video');
+            document.getElementById('btn-stop-cam').classList.add('hidden');
+            document.getElementById('btn-leave-stream').classList.remove('hidden');
+            document.getElementById('vid').muted = false; // Hear audio
+
+            pc = new RTCPeerConnection(config);
+            pc.ontrack = e => document.getElementById('vid').srcObject = e.streams[0];
+            pc.onicecandidate = e => { if(e.candidate) socket.emit('candidate', camId, e.candidate); };
+
+            socket.emit('join_stream', camId);
+        }
+
+        function leaveStream() {
+            if (pc) { pc.close(); pc = null; }
+            document.getElementById('vid').srcObject = null;
+            socket.emit('leave_stream');
+            initViewer(); // Go back to lobby
+        }
+
+        // --- SOCKET EVENTS ---
+        
         socket.on('camera_list_update', (list) => {
+            if (currentRole !== 'viewer') return;
             const d = document.getElementById('cam-list');
             d.innerHTML = "";
             if(list.length === 0) d.innerHTML = "<p>No cameras online.</p>";
-            
             list.forEach(cam => {
                 const row = document.createElement('div');
                 row.className = 'cam-row';
-                row.innerHTML = `<span>${cam.name}</span> <span>🔴 Live</span>`;
+                row.innerHTML = `<span>📷 ${cam.name}</span> <span>👥 ${cam.viewers}</span>`;
                 row.onclick = () => connectToCamera(cam.id);
                 d.appendChild(row);
             });
         });
 
-        async function connectToCamera(camId) {
-            document.getElementById('screen-lobby').classList.add('hidden');
-            document.getElementById('screen-video').classList.remove('hidden');
-            document.getElementById('vid').muted = false; // Unmute for viewer
-
+        // (Broadcaster) Viewer joined
+        socket.on('watcher_joined', async (viewerId) => {
             pc = new RTCPeerConnection(config);
-
-            pc.ontrack = e => {
-                document.getElementById('vid').srcObject = e.streams[0];
-                log("✅ Video received!");
-            };
-
-            pc.onicecandidate = e => {
-                if(e.candidate) socket.emit('candidate', camId, e.candidate);
-            };
-
-            log("Connecting to camera...");
-            socket.emit('join_stream', camId);
-        }
-
-        socket.on('offer', async (broadcasterId, desc) => {
-            // BroadcasterId comes as tuple from server sometimes, handle carefully
-            // Actually, in the server code I passed (sid, msg), so broadcasterId is sid.
-            if(!pc) pc = new RTCPeerConnection(config);
+            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+            pc.onicecandidate = e => { if (e.candidate) socket.emit('candidate', viewerId, e.candidate); };
             
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit('offer', viewerId, pc.localDescription);
+        });
+
+        // (Viewer) Broadcaster disconnected
+        socket.on('broadcaster_left', () => {
+            if (currentRole === 'viewer') {
+                alert("Camera ended stream.");
+                leaveStream();
+            }
+        });
+
+        // WebRTC Signaling
+        socket.on('offer', async (id, desc) => {
+            if (!pc) pc = new RTCPeerConnection(config);
             await pc.setRemoteDescription(desc);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            socket.emit('answer', broadcasterId, pc.localDescription);
+            socket.emit('answer', id, pc.localDescription);
         });
 
-        socket.on('error', (msg) => {
-            alert(msg);
-            startViewerLobby(); // Go back to list if ID was invalid
-        });
+        socket.on('answer', (id, desc) => { if(pc) pc.setRemoteDescription(desc); });
+        socket.on('candidate', (id, cand) => { if(pc) pc.addIceCandidate(new RTCIceCandidate(cand)); });
 
     </script>
 </body>
