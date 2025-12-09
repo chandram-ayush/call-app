@@ -1,633 +1,186 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>K-City Ultimate (Multi-Viewer)</title>
-
+    <title>K-City Link</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-
     <style>
-
-        body { 
-
-            background: #000; color: #fff; 
-
-            font-family: sans-serif; 
-
-            text-align: center; 
-
-            display: flex; flex-direction: column; 
-
-            height: 100vh; margin: 0; overflow: hidden; 
-
-        }
-
+        body { background: #000; color: #fff; font-family: sans-serif; text-align: center; margin: 0; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        .vid-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; }
+        video { width: 100%; height: 100%; object-fit: cover; }
         
-
-        /* Layouts */
-
-        .vid-wrapper { 
-
-            position: relative; width: 100%; 
-
-            height: 100%; display: flex; 
-
-            flex-direction: column; justify-content: center; 
-
-            align-items: center; 
-
-        }
-
-        video { 
-
-            width: 100%; max-height: 80vh; 
-
-            background: #111; border-radius: 8px; 
-
-        }
-
+        .btn { padding: 15px 30px; border-radius: 30px; border: none; font-weight: bold; font-size: 16px; margin: 10px; cursor: pointer; width: 80%; max-width: 300px; }
+        .btn-cam { background: #e91e63; color: white; }
+        .btn-watch { background: #2196f3; color: white; }
+        .btn-back { background: #444; color: white; margin-top: 20px;}
         
-
-        /* Buttons */
-
-        .btn { 
-
-            padding: 15px 25px; font-size: 16px; 
-
-            border: none; border-radius: 30px; 
-
-            cursor: pointer; margin: 15px; 
-
-            font-weight: bold; text-transform: uppercase; 
-
-            letter-spacing: 1px; width: 80%; 
-
-            max-width: 300px; transition: transform 0.1s; 
-
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5); 
-
-        }
-
-        .btn:active { transform: scale(0.95); }
-
-        .btn-cam { 
-
-            background: linear-gradient(135deg, #e91e63, #c2185b); 
-
-            color: white; 
-
-        }
-
-        .btn-watch { 
-
-            background: linear-gradient(135deg, #2196f3, #1976d2); 
-
-            color: white; 
-
-        }
-
-        .btn-end { 
-
-            background: linear-gradient(135deg, #ff4444, #cc0000); 
-
-            color: white; margin-top: 20px; 
-
-        }
-
+        input { padding: 15px; border-radius: 30px; border: 1px solid #444; background: #222; color: white; width: 70%; text-align: center; margin-bottom: 20px; font-size: 16px;}
         
-
-        /* Status */
-
-        .status-pulse { 
-
-            color: #00e676; font-size: 14px; 
-
-            animation: pulse 2s infinite; margin-top: 20px; 
-
-        }
-
-        @keyframes pulse { 
-
-            0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } 
-
-        }
-
-
-
+        #cam-list { max-height: 60vh; overflow-y: auto; width: 100%; }
+        .cam-row { background: #222; margin: 10px auto; padding: 15px; border-radius: 10px; width: 90%; max-width: 400px; display: flex; justify-content: space-between; cursor: pointer; border: 1px solid #333;}
         .hidden { display: none !important; }
-
-
-
-        /* Stealth Mode */
-
-        #stealth-overlay {
-
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-
-            background: black; z-index: 99999; cursor: pointer;
-
-            display: flex; align-items: center; justify-content: center;
-
-        }
-
-        #stealth-text { 
-
-            color: #111; font-size: 10px; 
-
-            animation: fadeOut 5s forwards; 
-
-        }
-
-        @keyframes fadeOut { 
-
-            0% { opacity: 1; } 100% { opacity: 0; } 
-
-        }
-
-
-
-        /* Viewer Count */
-
-        .viewer-count {
-
-            position: absolute; top: 20px; right: 20px;
-
-            background: rgba(0,230,118,0.2); border: 1px solid #00e676;
-
-            padding: 8px 12px; border-radius: 20px; font-size: 12px;
-
-            font-weight: bold;
-
-        }
-
-
-
-        /* Console */
-
-        #console { 
-
-            position: fixed; bottom: 0; left: 0; width: 100%; 
-
-            height: 80px; background: rgba(0,0,0,0.8); 
-
-            font-family: monospace; font-size: 10px; color: #0f0; 
-
-            overflow-y: scroll; text-align: left; 
-
-            padding: 5px; pointer-events: none; 
-
-            border-top: 1px solid #333; 
-
-        }
-
+        
+        /* Debug Console */
+        #console { position: fixed; bottom: 0; left: 0; width: 100%; height: 80px; background: rgba(0,0,0,0.8); font-size: 10px; text-align: left; overflow-y: scroll; pointer-events: none; color: #0f0; z-index: 999;}
     </style>
-
 </head>
-
 <body>
 
-
-
-    <div id="select-screen">
-
-        <h2 style="margin-top: 50px; letter-spacing: 2px;">K-CITY LINK</h2>
-
-        <button class="btn btn-cam" onclick="initBroadcasterMode()">Camera 📷</button>
-
-        <button class="btn btn-watch" onclick="initCallerMode()">Viewer 👀</button>
-
+    <div id="screen-select" class="vid-wrapper" style="flex-direction: column;">
+        <h1>K-CITY LINK</h1>
+        <input type="text" id="camName" placeholder="Camera Name (Optional)">
+        <button class="btn btn-cam" onclick="startBroadcaster()">Start Camera 📷</button>
+        <button class="btn btn-watch" onclick="startViewerLobby()">Watch Stream 👀</button>
     </div>
 
-
-
-    <div id="broadcaster-screen" class="hidden vid-wrapper">
-
-        <h3 style="color: #aaa;">STANDBY MODE</h3>
-
-        <div class="status-pulse" id="broadcaster-status">● Connected to Server</div>
-
-        <div class="viewer-count" id="viewer-count">Viewers: 0</div>
-
-        <p style="color: #666; font-size: 12px; max-width: 80%;">
-
-            Waiting for viewers...<br>
-
-            Camera OFF to save battery.
-
-        </p>
-
-        <video id="localVideo" muted playsinline autoplay style="display: none;"></video>
-
+    <div id="screen-lobby" class="hidden vid-wrapper" style="flex-direction: column; justify-content: flex-start; padding-top: 50px;">
+        <h3>Select Camera</h3>
+        <div id="cam-list">Searching...</div>
+        <button class="btn btn-back" onclick="location.reload()">Back</button>
     </div>
 
-
-
-    <div id="caller-screen" class="hidden vid-wrapper">
-
-        <video id="remoteVideo" playsinline autoplay></video>
-
-        <div class="viewer-count">🖥️ Viewer Mode</div>
-
-        <button class="btn btn-end" onclick="endCall()">End Call</button>
-
+    <div id="screen-video" class="hidden vid-wrapper">
+        <video id="vid" playsinline autoplay muted></video>
+        <button class="btn btn-back" style="position: absolute; bottom: 30px;" onclick="location.reload()">Stop / Leave</button>
     </div>
-
-
-
-    <div id="stealth-overlay" class="hidden" ondblclick="wakeUpScreen()">
-
-        <div id="stealth-text">System Active. Double Tap to Wake.</div>
-
-    </div>
-
-
 
     <div id="console"></div>
 
-
-
     <script>
-
-        // ✅ WORKING TURN SERVERS
-
+        // 1. ROBUST CONFIGURATION (This works best for cross-network)
         const config = {
-
             iceServers: [
-
                 { urls: 'stun:stun.l.google.com:19302' },
-
-                {
-
-                    urls: [
-
-                        'turn:openrelay.metered.ca:80',
-
-                        'turn:openrelay.metered.ca:443',
-
-                        'turn:openrelay.metered.ca:443?transport=tcp'
-
-                    ],
-
-                    username: "openrelayproject",
-
-                    credential: "openrelayproject"
-
-                }
-
+                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+                { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
             ]
-
         };
 
-
-
-        let socket = null;
-
-        let peerConnections = {};  // Multiple viewers = multiple peer connections
-
+        const socket = io();
+        let pc = null;
         let localStream = null;
 
-        let wakeLock = null;
-
-        let activeViewers = 0;
-
-
-
         function log(msg) {
-
-            const c = document.getElementById('console');
-
-            const d = document.createElement('div');
-
-            d.innerText = `> ${msg}`;
-
-            c.appendChild(d);
-
-            c.scrollTop = c.scrollHeight;
-
+            document.getElementById('console').innerHTML += `<div>${msg}</div>`;
+            document.getElementById('console').scrollTop = 9999;
         }
 
-
-
-        // Initialize Socket
-
-        socket = io();
-
-        log("🔌 Server Connected");
-
-
-
-        // --- BROADCASTER MODE ---
-
-        async function initBroadcasterMode() {
-
-            document.getElementById('select-screen').classList.add('hidden');
-
-            document.getElementById('broadcaster-screen').classList.remove('hidden');
-
+        // --- BROADCASTER ---
+        async function startBroadcaster() {
+            const name = document.getElementById('camName').value || "Unnamed Cam";
             
-
-            try { 
-
-                wakeLock = await navigator.wakeLock.request('screen'); 
-
-                log("🔋 WakeLock Active"); 
-
-            } catch (e) {}
-
-
-
-            socket.emit('broadcaster');
-
-            log("📡 Standby: Waiting for viewers...");
-
+            // UI
+            document.getElementById('screen-select').classList.add('hidden');
+            document.getElementById('screen-video').classList.remove('hidden');
             
+            // Wake Lock
+            try { await navigator.wakeLock.request('screen'); } catch(e){}
 
-            // Pre-warm permissions
-
+            // Camera Init
             try {
+                localStream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}, audio: true});
+                document.getElementById('vid').srcObject = localStream;
+                document.getElementById('vid').muted = true; // Local video must be muted
+            } catch(e) { alert("Camera failed: " + e); return; }
 
-                const temp = await navigator.mediaDevices.getUserMedia({video:true, audio:true});
-
-                temp.getTracks().forEach(t => t.stop());
-
-            } catch(e) {
-
-                log("⚠️ Camera permission needed");
-
-            }
-
+            socket.emit('register_broadcaster', name);
+            log("📡 Broadcasting started...");
         }
 
-
-
-        // Handle each viewer individually
-
-        socket.on('watcher', async (viewerId) => {
-
-            log(`📞 Viewer ${viewerId} connected (Total: ${++activeViewers})`);
-
-            updateViewerCount(activeViewers);
-
+        // Incoming watcher
+        socket.on('watcher_joined', async (viewerId) => {
+            log(`👤 Viewer ${viewerId} connecting...`);
             
-
-            // Start camera ONLY if not already running
-
-            if (!localStream) {
-
-                try {
-
-                    localStream = await navigator.mediaDevices.getUserMedia({ 
-
-                        video: { facingMode: 'environment' }, 
-
-                        audio: true 
-
-                    });
-
-                    document.getElementById('localVideo').srcObject = localStream;
-
-                    log("✅ Camera ON");
-
-                } catch (e) {
-
-                    log("❌ Camera failed: " + e.message);
-
-                    return;
-
-                }
-
-            }
-
-
-
-            // Enter stealth for THIS viewer
-
-            document.getElementById('stealth-overlay').classList.remove('hidden');
-
+            pc = new RTCPeerConnection(config);
             
+            // Add tracks
+            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
 
-            // Create peer connection for THIS viewer
-
-            const peer = new RTCPeerConnection(config);
-
-            peerConnections[viewerId] = peer;
-
-            
-
-            localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
-
-            
-
-            peer.onicecandidate = event => {
-
-                if (event.candidate) socket.emit('candidate', viewerId, event.candidate);
-
+            // ICE Handling
+            pc.onicecandidate = e => {
+                if (e.candidate) socket.emit('candidate', viewerId, e.candidate);
             };
 
-            
-
-            const offer = await peer.createOffer();
-
-            await peer.setLocalDescription(offer);
-
-            socket.emit('offer', viewerId, peer.localDescription);
-
+            // Create Offer
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit('offer', viewerId, pc.localDescription);
         });
 
-
-
-        // Handle answers from each viewer
-
+        // Answer received
         socket.on('answer', (viewerId, desc) => {
-
-            if (peerConnections[viewerId]) {
-
-                peerConnections[viewerId].setRemoteDescription(desc);
-
-            }
-
+            if(pc) pc.setRemoteDescription(desc);
         });
 
-
-
+        // ICE Candidate received
         socket.on('candidate', (viewerId, cand) => {
-
-            if (peerConnections[viewerId]) {
-
-                peerConnections[viewerId].addIceCandidate(new RTCIceCandidate(cand));
-
-            }
-
+            if(pc) pc.addIceCandidate(new RTCIceCandidate(cand));
         });
 
-
-
-        // Handle viewer leaving
-
-        socket.on('viewer_left', (viewerId) => {
-
-            log(`👋 Viewer ${viewerId} left (Remaining: ${--activeViewers})`);
-
-            updateViewerCount(activeViewers);
-
+        socket.on('stop_broadcasting', () => {
+             log("No viewers. Connection idle.");
+             if(pc) { pc.close(); pc = null; }
         });
 
+        // --- VIEWER ---
+        function startViewerLobby() {
+            document.getElementById('screen-select').classList.add('hidden');
+            document.getElementById('screen-lobby').classList.remove('hidden');
+            socket.emit('get_cameras');
+        }
 
-
-        // ALL viewers gone - go to standby
-
-        socket.on('all_viewers_left', () => {
-
-            log("🏠 ALL viewers gone - returning to standby");
-
-            activeViewers = 0;
-
-            updateViewerCount(0);
-
+        socket.on('camera_list_update', (list) => {
+            const d = document.getElementById('cam-list');
+            d.innerHTML = "";
+            if(list.length === 0) d.innerHTML = "<p>No cameras online.</p>";
             
-
-            // Stop camera to save battery
-
-            if (localStream) {
-
-                localStream.getTracks().forEach(track => track.stop());
-
-                localStream = null;
-
-                log("✅ Camera OFF (battery saving)");
-
-            }
-
-            
-
-            // Close all peer connections
-
-            Object.values(peerConnections).forEach(pc => pc.close());
-
-            peerConnections = {};
-
-            
-
-            // Exit stealth
-
-            document.getElementById('stealth-overlay').classList.add('hidden');
-
+            list.forEach(cam => {
+                const row = document.createElement('div');
+                row.className = 'cam-row';
+                row.innerHTML = `<span>${cam.name}</span> <span>🔴 Live</span>`;
+                row.onclick = () => connectToCamera(cam.id);
+                d.appendChild(row);
+            });
         });
 
+        async function connectToCamera(camId) {
+            document.getElementById('screen-lobby').classList.add('hidden');
+            document.getElementById('screen-video').classList.remove('hidden');
+            document.getElementById('vid').muted = false; // Unmute for viewer
 
+            pc = new RTCPeerConnection(config);
 
-        function updateViewerCount(count) {
-
-            document.getElementById('viewer-count').textContent = `Viewers: ${count}`;
-
-            document.getElementById('broadcaster-status').textContent = 
-
-                count > 0 ? "● Broadcasting Live" : "● Waiting for viewers...";
-
-        }
-
-
-
-        function wakeUpScreen() {
-
-            document.getElementById('stealth-overlay').classList.add('hidden');
-
-        }
-
-
-
-        // --- VIEWER MODE ---
-
-        function initCallerMode() {
-
-            document.getElementById('select-screen').classList.add('hidden');
-
-            document.getElementById('caller-screen').classList.remove('hidden');
-
-            log("📞 Calling camera...");
-
-            socket.emit('watcher');
-
-        }
-
-
-
-        socket.on('offer', async (id, description) => {
-
-            const peer = new RTCPeerConnection(config);
-
-            peerConnections[id] = peer;
-
-            
-
-            peer.onicecandidate = event => {
-
-                if (event.candidate) socket.emit('candidate', id, event.candidate);
-
+            pc.ontrack = e => {
+                document.getElementById('vid').srcObject = e.streams[0];
+                log("✅ Video received!");
             };
 
-            
-
-            peer.ontrack = event => {
-
-                document.getElementById('remoteVideo').srcObject = event.streams[0];
-
-                log("✅ Video stream received");
-
+            pc.onicecandidate = e => {
+                if(e.candidate) socket.emit('candidate', camId, e.candidate);
             };
 
-            
-
-            await peer.setRemoteDescription(description);
-
-            const answer = await peer.createAnswer();
-
-            await peer.setLocalDescription(answer);
-
-            socket.emit('answer', id, peer.localDescription);
-
-        });
-
-
-
-        function endCall() {
-
-            socket.disconnect();
-
-            location.reload();
-
+            log("Connecting to camera...");
+            socket.emit('join_stream', camId);
         }
 
-
-
-        socket.on('broadcaster_left', () => {
-
-            log("📴 Camera went offline");
-
-            location.reload();
-
+        socket.on('offer', async (broadcasterId, desc) => {
+            // BroadcasterId comes as tuple from server sometimes, handle carefully
+            // Actually, in the server code I passed (sid, msg), so broadcasterId is sid.
+            if(!pc) pc = new RTCPeerConnection(config);
+            
+            await pc.setRemoteDescription(desc);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit('answer', broadcasterId, pc.localDescription);
         });
 
-
-
-        socket.on('no_broadcaster', () => {
-
-            log("❌ No camera available");
-
-            alert("No camera online. Start camera first.");
-
-            location.reload();
-
+        socket.on('error', (msg) => {
+            alert(msg);
+            startViewerLobby(); // Go back to list if ID was invalid
         });
 
     </script>
-
 </body>
-
 </html>
