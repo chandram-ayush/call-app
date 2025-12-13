@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>K-City Stream</title>
+    <title>K-City Auto-Reconnect</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         body { background: #000; color: #fff; font-family: sans-serif; text-align: center; margin: 0; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
@@ -21,11 +21,19 @@
         .cam-row { background: #222; margin: 10px auto; padding: 15px; border-radius: 10px; width: 90%; max-width: 400px; display: flex; justify-content: space-between; cursor: pointer; border: 1px solid #333;}
         .hidden { display: none !important; }
         
-        /* Floating controls */
         .controls { position: absolute; bottom: 20px; left: 0; width: 100%; display: flex; justify-content: center; z-index: 10; }
+
+        /* RECONNECTION BANNER */
+        #reconnect-msg {
+            position: absolute; top: 0; left: 0; width: 100%;
+            background: #ff9800; color: black; font-weight: bold;
+            padding: 10px; z-index: 999; display: none;
+        }
     </style>
 </head>
 <body>
+
+    <div id="reconnect-msg">⚠ Connection Lost... Retrying...</div>
 
     <div id="screen-select" class="vid-wrapper" style="flex-direction: column;">
         <h1 style="letter-spacing: 2px;">K-CITY LINK</h1>
@@ -58,67 +66,94 @@
             ]
         };
 
-        const socket = io();
+        // 1. ROBUST RECONNECTION SETTINGS
+        const socket = io({
+            reconnection: true,             // Enable auto-reconnect
+            reconnectionAttempts: Infinity, // Keep trying forever
+            reconnectionDelay: 1000,        // Wait 1s between attempts
+            reconnectionDelayMax: 5000      // Max wait 5s
+        });
+
         let pc = null;
         let localStream = null;
-        let currentRole = null; // 'broadcaster' or 'viewer'
+        let currentRole = null;
+        
+        // STATE TRACKING FOR RECONNECTION
+        let isBroadcasting = false;
+        let myCameraName = "";
 
-        // --- NAVIGATION HELPERS ---
+        // --- SOCKET RECONNECTION LOGIC ---
+
+        socket.on('disconnect', () => {
+            console.log("❌ Network Lost!");
+            document.getElementById('reconnect-msg').style.display = 'block';
+        });
+
+        socket.on('connect', () => {
+            console.log("✅ Connected!");
+            document.getElementById('reconnect-msg').style.display = 'none';
+
+            // THE MAGIC FIX: If we were broadcasting, re-register immediately
+            if (isBroadcasting && currentRole === 'broadcaster') {
+                console.log("🔄 Restoring Broadcast Session...");
+                socket.emit('register_broadcaster', myCameraName);
+            }
+            
+            // If we were a viewer, refresh the list
+            if (currentRole === 'viewer') {
+                socket.emit('get_cameras');
+            }
+        });
+
+        // --- NAVIGATION ---
         function showScreen(id) {
             ['screen-select', 'screen-lobby', 'screen-video'].forEach(s => document.getElementById(s).classList.add('hidden'));
             document.getElementById(id).classList.remove('hidden');
         }
 
         function goHome() {
-            // Clean up everything before going home
             if (localStream) stopCamera();
             if (pc) leaveStream();
             showScreen('screen-select');
         }
 
-        // --- BROADCASTER LOGIC ---
+        // --- BROADCASTER ---
         async function initBroadcaster() {
-            const name = document.getElementById('camName').value || "Unnamed Cam";
+            myCameraName = document.getElementById('camName').value || "Unnamed Cam";
             currentRole = 'broadcaster';
+            isBroadcasting = true; // Set Flag
 
             try {
-                // Get Camera
                 localStream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}, audio: true});
                 document.getElementById('vid').srcObject = localStream;
-                document.getElementById('vid').muted = true; // Mute self
+                document.getElementById('vid').muted = true; 
                 
-                // Wake Lock
                 try { await navigator.wakeLock.request('screen'); } catch(e){}
 
-                // UI Updates
                 showScreen('screen-video');
                 document.getElementById('btn-stop-cam').classList.remove('hidden');
                 document.getElementById('btn-leave-stream').classList.add('hidden');
 
-                socket.emit('register_broadcaster', name);
+                socket.emit('register_broadcaster', myCameraName);
 
             } catch(e) { alert("Camera Error: " + e); }
         }
 
         function stopCamera() {
-            // 1. Stop Hardware
+            isBroadcasting = false; // Clear Flag
             if (localStream) {
-                localStream.getTracks().forEach(track => track.stop()); // Turns off light
+                localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
             }
-            // 2. Stop Network
             if (pc) { pc.close(); pc = null; }
-            
-            // 3. Notify Server
             socket.emit('stop_broadcast');
-            
-            // 4. UI
             showScreen('screen-select');
         }
 
-        // --- VIEWER LOGIC ---
+        // --- VIEWER ---
         function initViewer() {
             currentRole = 'viewer';
+            isBroadcasting = false;
             showScreen('screen-lobby');
             socket.emit('get_cameras');
         }
@@ -127,7 +162,7 @@
             showScreen('screen-video');
             document.getElementById('btn-stop-cam').classList.add('hidden');
             document.getElementById('btn-leave-stream').classList.remove('hidden');
-            document.getElementById('vid').muted = false; // Hear audio
+            document.getElementById('vid').muted = false;
 
             pc = new RTCPeerConnection(config);
             pc.ontrack = e => document.getElementById('vid').srcObject = e.streams[0];
@@ -140,11 +175,10 @@
             if (pc) { pc.close(); pc = null; }
             document.getElementById('vid').srcObject = null;
             socket.emit('leave_stream');
-            initViewer(); // Go back to lobby
+            initViewer();
         }
 
         // --- SOCKET EVENTS ---
-        
         socket.on('camera_list_update', (list) => {
             if (currentRole !== 'viewer') return;
             const d = document.getElementById('cam-list');
@@ -159,18 +193,15 @@
             });
         });
 
-        // (Broadcaster) Viewer joined
         socket.on('watcher_joined', async (viewerId) => {
             pc = new RTCPeerConnection(config);
             localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
             pc.onicecandidate = e => { if (e.candidate) socket.emit('candidate', viewerId, e.candidate); };
-            
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             socket.emit('offer', viewerId, pc.localDescription);
         });
 
-        // (Viewer) Broadcaster disconnected
         socket.on('broadcaster_left', () => {
             if (currentRole === 'viewer') {
                 alert("Camera ended stream.");
@@ -178,7 +209,6 @@
             }
         });
 
-        // WebRTC Signaling
         socket.on('offer', async (id, desc) => {
             if (!pc) pc = new RTCPeerConnection(config);
             await pc.setRemoteDescription(desc);
@@ -189,7 +219,6 @@
 
         socket.on('answer', (id, desc) => { if(pc) pc.setRemoteDescription(desc); });
         socket.on('candidate', (id, cand) => { if(pc) pc.addIceCandidate(new RTCIceCandidate(cand)); });
-
     </script>
 </body>
 </html>
