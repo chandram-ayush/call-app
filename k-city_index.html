@@ -3,94 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>K-City Mobile Fix</title>
+    <title>K-City Wide Angle</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        /* 1. Fix for Mobile Viewport Height */
+        /* 1. Viewport Fix */
         body { 
-            background: #121212; 
-            color: #fff; 
-            font-family: sans-serif; 
-            text-align: center; 
-            margin: 0; 
-            overflow: hidden; 
-            height: 100vh;      /* Fallback */
-            height: 100dvh;     /* Dynamic height for mobile browsers */
-            display: flex; 
-            flex-direction: column; 
+            background: #121212; color: #fff; font-family: sans-serif; 
+            text-align: center; margin: 0; overflow: hidden; 
+            height: 100vh; height: 100dvh; display: flex; flex-direction: column; 
         }
         
         .vid-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; width: 100%; height: 100%; background: #000; }
-        video { width: 100%; height: 100%; object-fit: cover; }
         
-        /* 2. Button Styling (Removed absolute position from here) */
+        /* 2. FIX: 'contain' ensures you see the FULL wide angle view without cropping */
+        video { width: 100%; height: 100%; object-fit: contain; }
+        
         .btn { 
-            padding: 15px 30px; 
-            border-radius: 30px; 
-            border: none; 
-            font-weight: bold; 
-            font-size: 16px; 
-            margin: 10px; 
-            cursor: pointer; 
-            width: 80%; 
-            max-width: 300px; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5); 
-            transition: transform 0.2s; 
-            position: relative; /* Ensure it stacks correctly */
+            padding: 15px 30px; border-radius: 30px; border: none; font-weight: bold; 
+            font-size: 16px; margin: 10px; cursor: pointer; width: 80%; max-width: 300px; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: transform 0.2s; position: relative;
         }
         .btn:active { transform: scale(0.95); }
         .btn-cam { background: #e91e63; color: white; }
         .btn-watch { background: #2196f3; color: white; }
         .btn-close { background: #d32f2f; color: white; }
+        .btn-switch { background: #ff9800; color: black; } /* Orange for Switch */
 
-        /* 3. Floating Bottom Container (For Lobby Back Button) */
         .floating-bottom {
-            position: absolute;
-            /* Moves button up safely on iPhones & Androids */
-            bottom: max(30px, env(safe-area-inset-bottom) + 20px); 
-            left: 50%;
-            transform: translateX(-50%);
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            z-index: 100;
+            position: absolute; bottom: max(30px, env(safe-area-inset-bottom) + 20px); 
+            left: 50%; transform: translateX(-50%); width: 100%; 
+            display: flex; justify-content: center; z-index: 100;
         }
 
-        /* 4. Video Controls Container */
         .controls { 
-            position: absolute; 
-            /* Moves controls up safely on iPhones & Androids */
-            bottom: max(30px, env(safe-area-inset-bottom) + 20px); 
-            left: 0; 
-            width: 100%; 
-            display: flex; 
-            justify-content: center; 
-            gap: 15px;
-            z-index: 100; 
-            pointer-events: none; /* Let clicks pass through empty space */
+            position: absolute; bottom: max(30px, env(safe-area-inset-bottom) + 20px); 
+            left: 0; width: 100%; display: flex; justify-content: center; gap: 15px; 
+            z-index: 100; pointer-events: none; 
         }
-        .controls .btn {
-            pointer-events: auto; /* Re-enable clicks on buttons */
-            width: auto;
-            min-width: 140px;
-        }
+        .controls .btn { pointer-events: auto; width: auto; min-width: 120px; padding: 15px 20px; }
 
         input { padding: 15px; border-radius: 30px; border: 1px solid #444; background: #222; color: white; width: 70%; text-align: center; margin-bottom: 20px; font-size: 16px;}
-        
-        #cam-list { max-height: 60vh; overflow-y: auto; width: 100%; padding-bottom: 100px; } /* Added padding so list doesn't hide behind back button */
+        #cam-list { max-height: 60vh; overflow-y: auto; width: 100%; padding-bottom: 100px; }
         .cam-row { background: #1e1e1e; margin: 10px auto; padding: 15px; border-radius: 12px; width: 85%; max-width: 400px; display: flex; justify-content: space-between; cursor: pointer; border: 1px solid #333; align-items: center;}
         
-        /* Stats Overlay */
         .live-stats {
             position: absolute; top: max(20px, env(safe-area-inset-top) + 10px); right: 20px; 
-            background: rgba(0,0,0,0.6); padding: 8px 15px; 
-            border-radius: 20px; font-weight: bold; font-size: 14px;
-            z-index: 50; display: flex; align-items: center; gap: 8px;
+            background: rgba(0,0,0,0.6); padding: 8px 15px; border-radius: 20px; 
+            font-weight: bold; font-size: 14px; z-index: 50; display: flex; align-items: center; gap: 8px;
             backdrop-filter: blur(5px);
         }
         .live-indicator { width: 10px; height: 10px; background: red; border-radius: 50%; display: inline-block; }
         
-        /* Standby Overlay */
         #standby-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: #111; display: flex; flex-direction: column; 
@@ -105,7 +68,7 @@
 <body>
 
     <div id="screen-select" class="vid-wrapper" style="flex-direction: column;">
-        <h1 style="letter-spacing: 2px; margin-bottom: 30px;">K-CITY LINK</h1>
+        <h1 style="letter-spacing: 2px; margin-bottom: 30px;">K-CITY WIDE</h1>
         <input type="text" id="camName" placeholder="Enter Camera Name">
         <button class="btn btn-cam" onclick="initBroadcaster()">Start Camera 📷</button>
         <button class="btn btn-watch" onclick="initViewer()">Watch Stream 👀</button>
@@ -114,7 +77,6 @@
     <div id="screen-lobby" class="hidden vid-wrapper" style="flex-direction: column; justify-content: flex-start; padding-top: 50px;">
         <h3>Active Cameras</h3>
         <div id="cam-list">Searching...</div>
-        
         <div class="floating-bottom">
             <button class="btn btn-close" onclick="goHome()">Back</button>
         </div>
@@ -135,22 +97,39 @@
         <video id="vid" playsinline autoplay muted></video>
 
         <div class="controls">
-            <button id="btn-stop-cam" class="btn btn-close hidden" onclick="stopBroadcasting()">🛑 Stop Stream</button>
-            <button id="btn-leave-stream" class="btn btn-close hidden" onclick="leaveStream()">👋 Leave Stream</button>
+            <button id="btn-switch" class="btn btn-switch hidden" onclick="switchCamera()">🔄 Switch</button>
+            <button id="btn-stop-cam" class="btn btn-close hidden" onclick="stopBroadcasting()">🛑 Stop</button>
+            <button id="btn-leave-stream" class="btn btn-close hidden" onclick="leaveStream()">👋 Leave</button>
         </div>
     </div>
 
     <script>
         const socket = io({ reconnection: true });
-        
-        const config = { 
-            iceServers: [ { urls: 'stun:stun.l.google.com:19302' } ] 
-        };
+        const config = { iceServers: [ { urls: 'stun:stun.l.google.com:19302' } ] };
 
         let pcMap = {}; 
         let localStream = null;
         let currentRole = null;
         let myName = "";
+        
+        // --- NEW CAMERA SWITCHING VARIABLES ---
+        let videoDevices = [];
+        let currentDeviceIdx = 0;
+
+        async function getCameras() {
+            try {
+                // Ask permission first to see labels
+                await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                videoDevices = devices.filter(device => device.kind === 'videoinput');
+                console.log("Found Cameras:", videoDevices);
+            } catch(e) {
+                console.error("Error finding cameras", e);
+            }
+        }
+        
+        // Run immediately to populate list
+        getCameras();
 
         // --- NAVIGATION ---
         function showScreen(id) {
@@ -171,8 +150,12 @@
             
             showScreen('screen-video');
             document.getElementById('standby-overlay').classList.remove('hidden'); 
+            
+            // Show Broadcaster Buttons
             document.getElementById('btn-stop-cam').classList.remove('hidden');
-            document.getElementById('btn-leave-stream').classList.add('hidden'); // Ensure Leave is hidden for Broadcaster
+            document.getElementById('btn-switch').classList.remove('hidden'); // Show Switch
+            document.getElementById('btn-leave-stream').classList.add('hidden');
+            
             document.getElementById('ui-stats').classList.remove('hidden');
             document.getElementById('view-count').innerText = "0";
 
@@ -185,7 +168,15 @@
             document.getElementById('standby-overlay').classList.add('hidden');
             
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}, audio: true});
+                // Use specific device ID if available, else environment
+                const constraints = {
+                    audio: true,
+                    video: videoDevices.length > 0 
+                        ? { deviceId: { exact: videoDevices[currentDeviceIdx].deviceId } }
+                        : { facingMode: 'environment' }
+                };
+
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
                 document.getElementById('vid').srcObject = localStream;
                 document.getElementById('vid').muted = true;
             } catch(e) {
@@ -193,8 +184,51 @@
             }
         }
 
+        async function switchCamera() {
+            if (videoDevices.length < 2) {
+                alert("No other cameras found!");
+                return;
+            }
+            
+            // Cycle index
+            currentDeviceIdx = (currentDeviceIdx + 1) % videoDevices.length;
+            
+            // Stop current video track only (keep audio if possible, but easiest to restart stream)
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+            }
+
+            try {
+                const newConstraints = {
+                    audio: true,
+                    video: { deviceId: { exact: videoDevices[currentDeviceIdx].deviceId } }
+                };
+
+                const newStream = await navigator.mediaDevices.getUserMedia(newConstraints);
+                localStream = newStream;
+                document.getElementById('vid').srcObject = newStream;
+
+                // UPDATE ALL VIEWERS (Seamlessly replace track)
+                const newVideoTrack = newStream.getVideoTracks()[0];
+                const newAudioTrack = newStream.getAudioTracks()[0];
+
+                for (let viewerId in pcMap) {
+                    const pc = pcMap[viewerId];
+                    // Replace Video
+                    const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (videoSender) videoSender.replaceTrack(newVideoTrack);
+                    
+                    // Replace Audio
+                    const audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+                    if (audioSender) audioSender.replaceTrack(newAudioTrack);
+                }
+
+            } catch (e) {
+                alert("Error switching: " + e);
+            }
+        }
+
         function sleepCamera() {
-            console.log("💤 Sleeping Camera...");
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
@@ -221,7 +255,10 @@
         function connectToCamera(camId) {
             showScreen('screen-video');
             document.getElementById('btn-leave-stream').classList.remove('hidden');
-            document.getElementById('btn-stop-cam').classList.add('hidden'); // Ensure Stop is hidden for Viewer
+            
+            document.getElementById('btn-stop-cam').classList.add('hidden');
+            document.getElementById('btn-switch').classList.add('hidden'); // Hide Switch for viewer
+
             document.getElementById('standby-overlay').classList.add('hidden');
             document.getElementById('vid').muted = false;
 
