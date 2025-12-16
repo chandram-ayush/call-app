@@ -3,107 +3,108 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>K-City Auto-Reconnect</title>
+    <title>K-City Standby & Fixes</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        body { background: #000; color: #fff; font-family: sans-serif; text-align: center; margin: 0; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
-        .vid-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; width: 100%; height: 100%; }
+        body { background: #121212; color: #fff; font-family: sans-serif; text-align: center; margin: 0; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        
+        /* Video Container */
+        .vid-wrapper { flex: 1; display: flex; justify-content: center; align-items: center; position: relative; width: 100%; height: 100%; background: #000; }
         video { width: 100%; height: 100%; object-fit: cover; }
         
-        .btn { padding: 15px 30px; border-radius: 30px; border: none; font-weight: bold; font-size: 16px; margin: 10px; cursor: pointer; width: 80%; max-width: 300px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        /* Buttons */
+        .btn { padding: 15px 30px; border-radius: 30px; border: none; font-weight: bold; font-size: 16px; margin: 10px; cursor: pointer; width: 80%; max-width: 300px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: transform 0.2s; }
+        .btn:active { transform: scale(0.95); }
         .btn-cam { background: #e91e63; color: white; }
         .btn-watch { background: #2196f3; color: white; }
-        .btn-close { background: #d32f2f; color: white; position: absolute; bottom: 30px; z-index: 100; }
         
-        input { padding: 15px; border-radius: 30px; border: 1px solid #444; background: #222; color: white; width: 70%; text-align: center; margin-bottom: 20px; font-size: 16px;}
-        
-        #cam-list { max-height: 60vh; overflow-y: auto; width: 100%; }
-        .cam-row { background: #222; margin: 10px auto; padding: 15px; border-radius: 10px; width: 90%; max-width: 400px; display: flex; justify-content: space-between; cursor: pointer; border: 1px solid #333;}
-        .hidden { display: none !important; }
-        
-        .controls { position: absolute; bottom: 20px; left: 0; width: 100%; display: flex; justify-content: center; z-index: 10; }
-
-        /* RECONNECTION BANNER */
-        #reconnect-msg {
-            position: absolute; top: 0; left: 0; width: 100%;
-            background: #ff9800; color: black; font-weight: bold;
-            padding: 10px; z-index: 999; display: none;
+        /* Floating Controls (Fixed Position) */
+        .controls { 
+            position: absolute; 
+            bottom: 30px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            width: 90%; 
+            display: flex; 
+            justify-content: center; 
+            z-index: 100; /* Ensure on top */
         }
+        .btn-close { background: #d32f2f; color: white; width: auto; min-width: 150px; }
+
+        /* Inputs & Lists */
+        input { padding: 15px; border-radius: 30px; border: 1px solid #444; background: #222; color: white; width: 70%; text-align: center; margin-bottom: 20px; font-size: 16px;}
+        #cam-list { max-height: 60vh; overflow-y: auto; width: 100%; padding-bottom: 20px;}
+        .cam-row { background: #1e1e1e; margin: 10px auto; padding: 15px; border-radius: 12px; width: 85%; max-width: 400px; display: flex; justify-content: space-between; cursor: pointer; border: 1px solid #333; align-items: center;}
+        
+        /* New UI Elements */
+        .live-stats {
+            position: absolute; top: 20px; right: 20px; 
+            background: rgba(0,0,0,0.6); padding: 8px 15px; 
+            border-radius: 20px; font-weight: bold; font-size: 14px;
+            z-index: 50; display: flex; align-items: center; gap: 8px;
+            backdrop-filter: blur(5px);
+        }
+        .live-indicator { width: 10px; height: 10px; background: red; border-radius: 50%; display: inline-block; }
+        
+        /* Standby Overlay */
+        #standby-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #111; display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; z-index: 10;
+        }
+        .pulse { animation: pulse 2s infinite; opacity: 0.7; }
+        @keyframes pulse { 0% { opacity: 0.3; } 50% { opacity: 1; } 100% { opacity: 0.3; } }
+
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-    <div id="reconnect-msg">⚠ Connection Lost... Retrying...</div>
-
     <div id="screen-select" class="vid-wrapper" style="flex-direction: column;">
-        <h1 style="letter-spacing: 2px;">K-CITY LINK</h1>
-        <input type="text" id="camName" placeholder="Camera Name (Optional)">
-        <button class="btn btn-cam" onclick="initBroadcaster()">Start Camera 📷</button>
+        <h1 style="letter-spacing: 2px; margin-bottom: 30px;">K-CITY LINK</h1>
+        <input type="text" id="camName" placeholder="Enter Camera Name">
+        <button class="btn btn-cam" onclick="initBroadcaster()">Start Camera Mode 📷</button>
         <button class="btn btn-watch" onclick="initViewer()">Watch Stream 👀</button>
     </div>
 
     <div id="screen-lobby" class="hidden vid-wrapper" style="flex-direction: column; justify-content: flex-start; padding-top: 50px;">
-        <h3>Select Camera</h3>
+        <h3>Active Cameras</h3>
         <div id="cam-list">Searching...</div>
         <button class="btn btn-close" onclick="goHome()">Back</button>
     </div>
 
     <div id="screen-video" class="hidden vid-wrapper">
+        
+        <div id="ui-stats" class="live-stats hidden">
+            <span class="live-indicator"></span>
+            <span id="view-count">0</span> Viewers
+        </div>
+
+        <div id="standby-overlay" class="hidden">
+            <h2 class="pulse">STANDBY MODE</h2>
+            <p style="color: #aaa;">Camera is off to save battery.</p>
+            <p>Waiting for viewers...</p>
+        </div>
+
         <video id="vid" playsinline autoplay muted></video>
+
         <div class="controls">
-            <button id="btn-stop-cam" class="btn btn-close hidden" onclick="stopCamera()">🛑 Close Stream</button>
+            <button id="btn-stop-cam" class="btn btn-close hidden" onclick="stopBroadcasting()">🛑 Stop Stream</button>
             <button id="btn-leave-stream" class="btn btn-close hidden" onclick="leaveStream()">👋 Leave Stream</button>
         </div>
     </div>
 
     <script>
-        const config = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-            ]
+        const socket = io({ reconnection: true });
+        
+        const config = { 
+            iceServers: [ { urls: 'stun:stun.l.google.com:19302' } ] 
         };
 
-        // 1. ROBUST RECONNECTION SETTINGS
-        const socket = io({
-            reconnection: true,             // Enable auto-reconnect
-            reconnectionAttempts: Infinity, // Keep trying forever
-            reconnectionDelay: 1000,        // Wait 1s between attempts
-            reconnectionDelayMax: 5000      // Max wait 5s
-        });
-
-        let pc = null;
+        let pcMap = {}; // Map of viewerID -> PeerConnection
         let localStream = null;
         let currentRole = null;
-        
-        // STATE TRACKING FOR RECONNECTION
-        let isBroadcasting = false;
-        let myCameraName = "";
-
-        // --- SOCKET RECONNECTION LOGIC ---
-
-        socket.on('disconnect', () => {
-            console.log("❌ Network Lost!");
-            document.getElementById('reconnect-msg').style.display = 'block';
-        });
-
-        socket.on('connect', () => {
-            console.log("✅ Connected!");
-            document.getElementById('reconnect-msg').style.display = 'none';
-
-            // THE MAGIC FIX: If we were broadcasting, re-register immediately
-            if (isBroadcasting && currentRole === 'broadcaster') {
-                console.log("🔄 Restoring Broadcast Session...");
-                socket.emit('register_broadcaster', myCameraName);
-            }
-            
-            // If we were a viewer, refresh the list
-            if (currentRole === 'viewer') {
-                socket.emit('get_cameras');
-            }
-        });
+        let myName = "";
 
         // --- NAVIGATION ---
         function showScreen(id) {
@@ -112,59 +113,75 @@
         }
 
         function goHome() {
-            if (localStream) stopCamera();
-            if (pc) leaveStream();
+            if(currentRole === 'broadcaster') stopBroadcasting();
+            if(currentRole === 'viewer') leaveStream();
             showScreen('screen-select');
         }
 
-        // --- BROADCASTER ---
-        async function initBroadcaster() {
-            myCameraName = document.getElementById('camName').value || "Unnamed Cam";
+        // --- BROADCASTER LOGIC ---
+        function initBroadcaster() {
+            myName = document.getElementById('camName').value || "Cam " + Math.floor(Math.random()*1000);
             currentRole = 'broadcaster';
-            isBroadcasting = true; // Set Flag
+            
+            showScreen('screen-video');
+            document.getElementById('standby-overlay').classList.remove('hidden'); // Start in Standby
+            document.getElementById('btn-stop-cam').classList.remove('hidden');
+            document.getElementById('ui-stats').classList.remove('hidden');
+            document.getElementById('view-count').innerText = "0";
 
+            socket.emit('register_broadcaster', myName);
+        }
+
+        async function wakeCamera() {
+            if (localStream) return; // Already on
+            console.log("📷 Waking Camera...");
+            document.getElementById('standby-overlay').classList.add('hidden'); // Hide Standby
+            
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}, audio: true});
                 document.getElementById('vid').srcObject = localStream;
-                document.getElementById('vid').muted = true; 
-                
-                try { await navigator.wakeLock.request('screen'); } catch(e){}
-
-                showScreen('screen-video');
-                document.getElementById('btn-stop-cam').classList.remove('hidden');
-                document.getElementById('btn-leave-stream').classList.add('hidden');
-
-                socket.emit('register_broadcaster', myCameraName);
-
-            } catch(e) { alert("Camera Error: " + e); }
+                document.getElementById('vid').muted = true; // Mute self
+            } catch(e) {
+                alert("Camera fail: " + e);
+            }
         }
 
-        function stopCamera() {
-            isBroadcasting = false; // Clear Flag
+        function sleepCamera() {
+            console.log("💤 Sleeping Camera...");
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
+                document.getElementById('vid').srcObject = null;
             }
-            if (pc) { pc.close(); pc = null; }
+            document.getElementById('standby-overlay').classList.remove('hidden'); // Show Standby
+        }
+
+        function stopBroadcasting() {
+            sleepCamera();
             socket.emit('stop_broadcast');
+            // Close all peer connections
+            Object.values(pcMap).forEach(pc => pc.close());
+            pcMap = {};
             showScreen('screen-select');
         }
 
-        // --- VIEWER ---
+        // --- VIEWER LOGIC ---
         function initViewer() {
             currentRole = 'viewer';
-            isBroadcasting = false;
             showScreen('screen-lobby');
             socket.emit('get_cameras');
         }
 
-        async function connectToCamera(camId) {
+        function connectToCamera(camId) {
             showScreen('screen-video');
-            document.getElementById('btn-stop-cam').classList.add('hidden');
             document.getElementById('btn-leave-stream').classList.remove('hidden');
+            document.getElementById('standby-overlay').classList.add('hidden'); // Viewers never see standby overlay
             document.getElementById('vid').muted = false;
 
-            pc = new RTCPeerConnection(config);
+            // Simple single PC for viewer
+            const pc = new RTCPeerConnection(config);
+            pcMap['broadcaster'] = pc;
+            
             pc.ontrack = e => document.getElementById('vid').srcObject = e.streams[0];
             pc.onicecandidate = e => { if(e.candidate) socket.emit('candidate', camId, e.candidate); };
 
@@ -172,53 +189,92 @@
         }
 
         function leaveStream() {
-            if (pc) { pc.close(); pc = null; }
+            if(pcMap['broadcaster']) { pcMap['broadcaster'].close(); delete pcMap['broadcaster']; }
             document.getElementById('vid').srcObject = null;
             socket.emit('leave_stream');
             initViewer();
         }
 
         // --- SOCKET EVENTS ---
-        socket.on('camera_list_update', (list) => {
-            if (currentRole !== 'viewer') return;
-            const d = document.getElementById('cam-list');
-            d.innerHTML = "";
-            if(list.length === 0) d.innerHTML = "<p>No cameras online.</p>";
-            list.forEach(cam => {
-                const row = document.createElement('div');
-                row.className = 'cam-row';
-                row.innerHTML = `<span>📷 ${cam.name}</span> <span>👥 ${cam.viewers}</span>`;
-                row.onclick = () => connectToCamera(cam.id);
-                d.appendChild(row);
-            });
-        });
 
-        socket.on('watcher_joined', async (viewerId) => {
-            pc = new RTCPeerConnection(config);
+        // 1. Broadcaster: A viewer joined
+        socket.on('watcher_joined', async (viewerId, totalViewers) => {
+            if (currentRole !== 'broadcaster') return;
+            
+            document.getElementById('view-count').innerText = totalViewers;
+            
+            // Wake up camera if it's the first viewer
+            await wakeCamera();
+
+            // Create WebRTC connection for this specific viewer
+            const pc = new RTCPeerConnection(config);
+            pcMap[viewerId] = pc;
+            
             localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+            
             pc.onicecandidate = e => { if (e.candidate) socket.emit('candidate', viewerId, e.candidate); };
+            
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             socket.emit('offer', viewerId, pc.localDescription);
         });
 
-        socket.on('broadcaster_left', () => {
-            if (currentRole === 'viewer') {
-                alert("Camera ended stream.");
-                leaveStream();
+        // 2. Broadcaster: A viewer left
+        socket.on('viewer_left', (viewerId, totalViewers) => {
+            if (currentRole !== 'broadcaster') return;
+
+            document.getElementById('view-count').innerText = totalViewers;
+
+            // Close PC for that viewer
+            if(pcMap[viewerId]) { pcMap[viewerId].close(); delete pcMap[viewerId]; }
+
+            // If 0 viewers, Go to Standby
+            if (totalViewers === 0) {
+                sleepCamera();
             }
         });
 
+        // 3. WebRTC Handshakes
         socket.on('offer', async (id, desc) => {
-            if (!pc) pc = new RTCPeerConnection(config);
+            // Viewer receiving offer
+            const pc = pcMap['broadcaster'];
+            if(!pc) return;
             await pc.setRemoteDescription(desc);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             socket.emit('answer', id, pc.localDescription);
         });
 
-        socket.on('answer', (id, desc) => { if(pc) pc.setRemoteDescription(desc); });
-        socket.on('candidate', (id, cand) => { if(pc) pc.addIceCandidate(new RTCIceCandidate(cand)); });
+        socket.on('answer', (id, desc) => {
+            // Broadcaster receiving answer from specific viewer
+            if(pcMap[id]) pcMap[id].setRemoteDescription(desc);
+        });
+
+        socket.on('candidate', (id, cand) => {
+            const pc = currentRole === 'broadcaster' ? pcMap[id] : pcMap['broadcaster'];
+            if(pc) pc.addIceCandidate(new RTCIceCandidate(cand));
+        });
+
+        // 4. Lobby Updates
+        socket.on('camera_list_update', (list) => {
+            if (currentRole !== 'viewer') return;
+            const d = document.getElementById('cam-list');
+            d.innerHTML = "";
+            if(list.length === 0) d.innerHTML = "<p style='color:#777;'>No cameras online.</p>";
+            list.forEach(cam => {
+                const row = document.createElement('div');
+                row.className = 'cam-row';
+                row.innerHTML = `<span>🎥 ${cam.name}</span> <span style='color:#aaa; font-size:14px'>👥 ${cam.viewers}</span>`;
+                row.onclick = () => connectToCamera(cam.id);
+                d.appendChild(row);
+            });
+        });
+
+        socket.on('broadcaster_left', () => {
+            alert("Stream ended by broadcaster.");
+            leaveStream();
+        });
+
     </script>
 </body>
 </html>

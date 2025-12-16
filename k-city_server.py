@@ -19,7 +19,7 @@ app.router.add_get('/', index)
 
 # --- Helpers ---
 async def broadcast_list():
-    """Update camera list for everyone"""
+    """Update camera list for everyone in the lobby"""
     data = [{'id': k, 'name': v['name'], 'viewers': len(v['viewers'])} for k, v in broadcasters.items()]
     await sio.emit('camera_list_update', data)
 
@@ -31,12 +31,11 @@ async def connect(sid, environ):
 @sio.event
 async def register_broadcaster(sid, name):
     broadcasters[sid] = {'name': name, 'viewers': set()}
-    print(f"✅ Camera Started: {name}")
+    print(f"✅ Camera Started (Standby): {name}")
     await broadcast_list()
 
 @sio.event
 async def stop_broadcast(sid):
-    """Broadcaster manually stops stream"""
     if sid in broadcasters:
         print(f"🛑 Camera Stopped: {broadcasters[sid]['name']}")
         # Notify all viewers to leave
@@ -53,7 +52,11 @@ async def get_cameras(sid):
 async def join_stream(sid, target_id):
     if target_id in broadcasters:
         broadcasters[target_id]['viewers'].add(sid)
-        await sio.emit('watcher_joined', sid, room=target_id)
+        count = len(broadcasters[target_id]['viewers'])
+        
+        # Notify broadcaster that a watcher joined, SEND TOTAL COUNT
+        await sio.emit('watcher_joined', (sid, count), room=target_id)
+        
         await broadcast_list()
     else:
         await sio.emit('error', "Camera not found", room=sid)
@@ -61,17 +64,20 @@ async def join_stream(sid, target_id):
 @sio.event
 async def leave_stream(sid):
     """Viewer manually leaves"""
-    # Find which camera this viewer was watching
     for cam_id, data in broadcasters.items():
         if sid in data['viewers']:
             data['viewers'].remove(sid)
-            await sio.emit('viewer_left', sid, room=cam_id)
+            count = len(data['viewers'])
+            
+            # Notify broadcaster that a watcher left, SEND TOTAL COUNT
+            await sio.emit('viewer_left', (sid, count), room=cam_id)
+            
             await broadcast_list()
             break
 
 @sio.event
 async def disconnect(sid):
-    # Handle unexpected disconnects (internet loss, closed tab)
+    # Handle unexpected disconnects
     if sid in broadcasters:
         await stop_broadcast(sid)
     else:
